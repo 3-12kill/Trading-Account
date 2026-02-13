@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeMind Pro - Ultimate Trading Journal</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+```
+    body {
+        font-family: 'DM Sans', sans-serif;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+        background-attachment: fixed;
+        color: #f1f5f9;
+        overflow-x: hidden;
+    }
+
+    h1, h2, h3, h4, h5, h6 { font-family: 'Syne', sans-serif; }
+
+    .bg-pattern {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; opacity: 0.03;
+        background-image: radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.3) 0%, transparent 50%),
+                         radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.3) 0%, transparent 50%);
+        animation: bgShift 20s ease infinite;
+    }
+
+    @keyframes bgShift { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(20px, 20px); } }
+
+    .glass-card {
+        background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); transition: all 0.3s;
+    }
+
+    .glass-card:hover { box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600;
+        color: white; cursor: pointer; transition: all 0.3s;
+    }
+
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4); }
+
+    .stat-card { animation: slideInUp 0.5s ease-out; }
+    @keyframes slideInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+    .notification { animation: slideInRight 0.4s ease-out; }
+    @keyframes slideInRight { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } }
+
+    .calendar-cell {
+        aspect-ratio: 1; transition: all 0.3s; cursor: pointer; border-radius: 12px;
+        position: relative; overflow: hidden;
+    }
+    .calendar-cell::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+        opacity: 0; transition: opacity 0.3s;
+    }
+    .calendar-cell:hover::before { opacity: 1; }
+    .calendar-cell:hover { transform: scale(1.05) translateY(-4px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); z-index: 10; }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: rgba(30, 41, 59, 0.3); }
+    ::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.5); border-radius: 4px; }
+
+    .input-field {
+        background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px; padding: 12px; color: #f1f5f9; width: 100%;
+    }
+    .input-field:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
+
+    .tab-active { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; }
+    .tab-inactive { background: rgba(255, 255, 255, 0.05); color: #94a3b8; }
+</style>
+```
+
+</head>
+<body>
+    <div class="bg-pattern"></div>
+    <div id="root"></div>
+
+```
+<script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+    const formatPercent = (value) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+    const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const formatTime = (date) => new Date(date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+    const calculateRMultiple = (pnl, initialRisk) => !initialRisk ? 0 : pnl / Math.abs(initialRisk);
+    
+    const calculateExpectancy = (trades) => {
+        if (!trades.length) return 0;
+        const wins = trades.filter(t => (t.pnl || 0) > 0);
+        const losses = trades.filter(t => (t.pnl || 0) < 0);
+        const winRate = wins.length / trades.length;
+        const avgWin = wins.length > 0 ? wins.reduce((sum, t) => sum + t.pnl, 0) / wins.length : 0;
+        const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((sum, t) => sum + t.pnl, 0) / losses.length) : 0;
+        return (winRate * avgWin) - ((1 - winRate) * avgLoss);
+    };
+
+    const calculateProfitFactor = (trades) => {
+        const grossProfit = trades.filter(t => (t.pnl || 0) > 0).reduce((sum, t) => sum + t.pnl, 0);
+        const grossLoss = Math.abs(trades.filter(t => (t.pnl || 0) < 0).reduce((sum, t) => sum + t.pnl, 0));
+        return grossLoss === 0 ? (grossProfit > 0 ? 999 : 0) : grossProfit / grossLoss;
+    };
+
+    const calculateDuration = (startTime, endTime) => {
+        const diff = new Date(endTime) - new Date(startTime);
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+        if (days > 0) return `${days}d ${hours % 24}h`;
+        if (hours > 0) return `${hours}h ${minutes % 60}m`;
+        return `${minutes}m`;
+    };
+
+    const getInitialData = () => {
+        const stored = localStorage.getItem('tradeMindUltimateFinal');
+        if (stored) return JSON.parse(stored);
+        
+        const sampleData = {
+            accounts: [{ id: '1', name: 'Demo Account', size: 10000, initialBalance: 10000, color: '#6366f1' }],
+            activeAccountId: '1',
+            trades: {},
+            activeTrades: {},
+            rules: { dailyMaxLoss: 2, dailyProfitCap: 4, maxTradesPerDay: 5, maxRiskPerTrade: 1 }
+        };
+
+        // Generate 60 sample trades over 45 days
+        const accountId = '1';
+        const now = Date.now();
+        const oneDay = 24 * 60 * 60 * 1000;
+
+        for (let i = 0; i < 60; i++) {
+            const daysAgo = Math.floor(Math.random() * 45);
+            const timestamp = new Date(now - (daysAgo * oneDay)).toISOString();
+            const dateKey = timestamp.split('T')[0];
+            const isWin = Math.random() > 0.42;
+            const initialRisk = 50 + Math.random() * 150;
+            const rMultiple = isWin ? (0.5 + Math.random() * 2.8) : -(0.3 + Math.random() * 1.1);
+            const pnl = initialRisk * rMultiple;
+            const durationMinutes = 15 + Math.random() * 480;
+            const startTime = timestamp;
+            const endTime = new Date(new Date(timestamp).getTime() + durationMinutes * 60000).toISOString();
+
+            const trade = {
+                id: `sample-${i}`,
+                accountId, date: dateKey, timestamp, startTime, closedAt: endTime,
+                instrument: ['EUR/USD', 'GBP/USD', 'GOLD', 'US30', 'NAS100'][Math.floor(Math.random() * 5)],
+                direction: Math.random() > 0.5 ? 'BUY' : 'SELL',
+                entryPrice: 1.0800 + Math.random() * 0.01,
+                exitPrice: 1.0800 + (Math.random() * 0.01 * (isWin ? 1 : -1)),
+                initialRisk, pnl, rMultiple,
+                outcome: isWin ? 'WIN' : 'LOSS',
+                strategy: ['Breakout', 'Pullback', 'Trend Following', 'Range', 'Reversal'][Math.floor(Math.random() * 5)],
+                session: ['London', 'New York', 'Asia', 'Overlap'][Math.floor(Math.random() * 4)],
+                emotionalState: ['Calm', 'Confident', 'FOMO', 'Anxious', 'Revenge'][Math.floor(Math.random() * 5)],
+                followedPlan: Math.random() > 0.25,
+                confidence: Math.floor(Math.random() * 5) + 1,
+                duration: calculateDuration(startTime, endTime)
+            };
+
+            if (!sampleData.trades[accountId]) sampleData.trades[accountId] = {};
+            if (!sampleData.trades[accountId][dateKey]) sampleData.trades[accountId][dateKey] = [];
+            sampleData.trades[accountId][dateKey].push(trade);
+        }
+
+        return sampleData;
+    };
+
+    const TradingJournalApp = () => {
+        const [data, setData] = useState(getInitialData());
+        const [currentPage, setCurrentPage] = useState('dashboard');
+        const [notifications, setNotifications] = useState([]);
+        const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+        useEffect(() => {
+            localStorage.setItem('tradeMindUltimateFinal', JSON.stringify(data));
+        }, [data]);
+
+        const addNotification = (message, type = 'info') => {
+            const id = Date.now();
+            setNotifications(prev => [...prev, { id, message, type }]);
+            setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 5000);
+        };
+
+        const updateData = (updates) => setData(prev => ({ ...prev, ...updates }));
+
+        const addTrade = (trade) => {
+            const accountId = data.activeAccountId;
+            const dateKey = new Date().toISOString().split('T')[0];
+            const tradeId = Date.now().toString();
+            const newTrade = { ...trade, id: tradeId, accountId, date: dateKey, timestamp: new Date().toISOString() };
+            const accountTrades = data.trades[accountId] || {};
+            const dayTrades = accountTrades[dateKey] || [];
+
+            updateData({
+                trades: { ...data.trades, [accountId]: { ...accountTrades, [dateKey]: [...dayTrades, newTrade] } }
+            });
+            addNotification('Trade logged successfully! ✓', 'success');
+        };
+
+        const addActiveTrade = (trade) => {
+            const accountId = data.activeAccountId;
+            const tradeId = Date.now().toString();
+            const newTrade = { ...trade, id: tradeId, accountId, startTime: new Date().toISOString() };
+            const activeTrades = data.activeTrades[accountId] || [];
+
+            updateData({
+                activeTrades: { ...data.activeTrades, [accountId]: [...activeTrades, newTrade] }
+            });
+            addNotification('Active trade created! ⚡', 'success');
+        };
+
+        const closeActiveTrade = (tradeId, outcome) => {
+            const accountId = data.activeAccountId;
+            const activeTrades = data.activeTrades[accountId] || [];
+            const trade = activeTrades.find(t => t.id === tradeId);
+            if (!trade) return;
+
+            const dateKey = new Date().toISOString().split('T')[0];
+            const accountTrades = data.trades[accountId] || {};
+            const dayTrades = accountTrades[dateKey] || [];
+            const closedAt = new Date().toISOString();
+            const duration = calculateDuration(trade.startTime, closedAt);
+            const closedTrade = { 
+                ...trade, 
+                ...outcome, 
+                date: dateKey, 
+                closedAt,
+                duration,
+                rMultiple: calculateRMultiple(parseFloat(outcome.pnl), parseFloat(trade.initialRisk || 0))
+            };
+            const remainingActive = activeTrades.filter(t => t.id !== tradeId);
+
+            updateData({
+                trades: { ...data.trades, [accountId]: { ...accountTrades, [dateKey]: [...dayTrades, closedTrade] } },
+                activeTrades: { ...data.activeTrades, [accountId]: remainingActive }
+            });
+            addNotification('Trade closed successfully! 📊', 'success');
+        };
+
+        const pages = [
+            { id: 'dashboard', icon: '📊', label: 'Dashboard' },
+            { id: 'calendar', icon: '📅', label: 'Calendar' },
+            { id: 'logger', icon: '📝', label: 'Logger' },
+            { id: 'history', icon: '📜', label: 'History' },
+            { id: 'metrics', icon: '🔥', label: 'Metrics' },
+            { id: 'charts', icon: '📈', label: 'Charts' },
+            { id: 'rules', icon: '⚙️', label: 'Rules' },
+            { id: 'profile', icon: '👤', label: 'Profile' }
+        ];
+
+        return (
+            <div className="min-h-screen relative z-10">
+                <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+                    {notifications.map(notif => (
+                        <div key={notif.id} className={`notification px-6 py-4 rounded-2xl shadow-2xl font-semibold ${
+                            notif.type === 'success' ? 'bg-gradient-to-r from-green-500 to-emerald-600' :
+                            notif.type === 'error' ? 'bg-gradient-to-r from-red-500 to-rose-600' :
+                            'bg-gradient-to-r from-blue-500 to-indigo-600'
+                        } text-white backdrop-blur-lg`}>
+                            {notif.message}
+                        </div>
+                    ))}
+                </div>
+
+                <header className="sticky top-0 z-40 backdrop-blur-xl bg-slate-900/50 border-b border-white/10">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+                        <div className="flex justify-between items-center mb-4">
+                            <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                                TradeMind Pro
+                            </h1>
+                            <button 
+                                className="md:hidden px-4 py-2 rounded-xl bg-white/5"
+                                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                            >
+                                ☰
+                            </button>
+                        </div>
+
+                        <div className="hidden md:flex space-x-2 overflow-x-auto pb-2">
+                            {pages.map(page => (
+                                <button
+                                    key={page.id}
+                                    onClick={() => setCurrentPage(page.id)}
+                                    className={`px-4 py-2.5 rounded-xl font-semibold transition-all whitespace-nowrap ${
+                                        currentPage === page.id ? 'tab-active shadow-lg' : 'tab-inactive hover:bg-white/10'
+                                    }`}
+                                >
+                                    <span className="hidden sm:inline">{page.icon} </span>{page.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {mobileMenuOpen && (
+                            <div className="md:hidden mt-4 grid grid-cols-2 gap-2">
+                                {pages.map(page => (
+                                    <button
+                                        key={page.id}
+                                        onClick={() => { setCurrentPage(page.id); setMobileMenuOpen(false); }}
+                                        className={`px-4 py-3 rounded-xl font-semibold ${
+                                            currentPage === page.id ? 'tab-active' : 'tab-inactive'
+                                        }`}
+                                    >
+                                        {page.icon} {page.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </header>
+
+                <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+                    {currentPage === 'dashboard' && <Dashboard data={data} />}
+                    {currentPage === 'calendar' && <CalendarPage data={data} />}
+                    {currentPage === 'logger' && <TradeLogger addTrade={addTrade} addActiveTrade={addActiveTrade} />}
+                    {currentPage === 'history' && <HistoryPage data={data} closeActiveTrade={closeActiveTrade} />}
+                    {currentPage === 'metrics' && <MetricsPage data={data} />}
+                    {currentPage === 'charts' && <ChartsPage data={data} />}
+                    {currentPage === 'rules' && <RulesPage rules={data.rules} updateData={updateData} />}
+                    {currentPage === 'profile' && <ProfilePage data={data} updateData={updateData} addNotification={addNotification} />}
+                </main>
+            </div>
+        );
+    };
+
+    // Components will continue in next part due to length...
+    // Dashboard Component
+    const Dashboard = ({ data }) => {
+        const accountId = data.activeAccountId;
+        const accountTrades = data.trades[accountId] || {};
+        const allTrades = Object.values(accountTrades).flat();
+        const totalPnL = allTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+        const wins = allTrades.filter(t => (t.pnl || 0) > 0).length;
+        const losses = allTrades.filter(t => (t.pnl || 0) < 0).length;
+        const winRate = allTrades.length > 0 ? (wins / allTrades.length) * 100 : 0;
+
+        const todayKey = new Date().toISOString().split('T')[0];
+        const todayTrades = accountTrades[todayKey] || [];
+        const todayPnL = todayTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+
+        return (
+            <div className="space-y-6">
+                <div className="glass-card p-6 sm:p-8">
+                    <h2 className="text-2xl sm:text-3xl font-bold mb-6">Performance Overview</h2>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                        <div className="p-4 sm:p-6 rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 border border-blue-500/30 stat-card">
+                            <p className="text-xs sm:text-sm text-blue-300 mb-2">Total P/L</p>
+                            <p className={`text-xl sm:text-3xl font-bold ${totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {formatCurrency(totalPnL)}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-2">{allTrades.length} trades</p>
+                        </div>
+
+                        <div className="p-4 sm:p-6 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 stat-card" style={{animationDelay: '0.1s'}}>
+                            <p className="text-xs sm:text-sm text-green-300 mb-2">Today's P/L</p>
+                            <p className={`text-xl sm:text-3xl font-bold ${todayPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {formatCurrency(todayPnL)}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-2">{todayTrades.length} trades today</p>
+                        </div>
+
+                        <div className="p-4 sm:p-6 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 stat-card" style={{animationDelay: '0.2s'}}>
+                            <p className="text-xs sm:text-sm text-purple-300 mb-2">Win Rate</p>
+                            <p className="text-xl sm:text-3xl font-bold text-white">{winRate.toFixed(1)}%</p>
+                            <p className="text-xs text-gray-400 mt-2">{wins}W / {losses}L</p>
+                        </div>
+
+                        <div className="p-4 sm:p-6 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-500/30 stat-card" style={{animationDelay: '0.3s'}}>
+                            <p className="text-xs sm:text-sm text-orange-300 mb-2">Expectancy</p>
+                            <p className="text-xl sm:text-3xl font-bold text-white">{formatCurrency(calculateExpectancy(allTrades))}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="glass-card p-6 sm:p-8">
+                    <h3 className="text-xl font-bold mb-4">Quick Stats</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3 sm:p-4 rounded-xl bg-white/5">
+                            <p className="text-xs text-gray-400">Avg Win</p>
+                            <p className="text-sm sm:text-lg font-bold text-green-400">
+                                {formatCurrency(wins > 0 ? allTrades.filter(t => (t.pnl || 0) > 0).reduce((s, t) => s + t.pnl, 0) / wins : 0)}
+                            </p>
+                        </div>
+                        <div className="p-3 sm:p-4 rounded-xl bg-white/5">
+                            <p className="text-xs text-gray-400">Avg Loss</p>
+                            <p className="text-sm sm:text-lg font-bold text-red-400">
+                                {formatCurrency(losses > 0 ? allTrades.filter(t => (t.pnl || 0) < 0).reduce((s, t) => s + t.pnl, 0) / losses : 0)}
+                            </p>
+                        </div>
+                        <div className="p-3 sm:p-4 rounded-xl bg-white/5">
+                            <p className="text-xs text-gray-400">Profit Factor</p>
+                            <p className="text-sm sm:text-lg font-bold text-blue-400">
+                                {calculateProfitFactor(allTrades).toFixed(2)}
+                            </p>
+                        </div>
+                        <div className="p-3 sm:p-4 rounded-xl bg-white/5">
+                            <p className="text-xs text-gray-400">Active Trades</p>
+                            <p className="text-sm sm:text-lg font-bold text-purple-400">
+                                {(data.activeTrades[accountId] || []).length}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // Calendar Page Component (NEW!)
+    const CalendarPage = ({ data }) => {
+        const [currentMonth, setCurrentMonth] = useState(new Date());
+        const accountId = data.activeAccountId;
+        const accountTrades = data.trades[accountId] || {};
+
+        const getDaysInMonth = (date) => {
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const days = [];
+            
+            const startingDayOfWeek = firstDay.getDay();
+            for (let i = 0; i < startingDayOfWeek; i++) {
+                days.push(null);
+            }
+            
+            for (let i = 1; i <= lastDay.getDate(); i++) {
+                days.push(new Date(year, month, i));
+            }
+            
+            return days;
+        };
+
+        const getDayStats = (date) => {
+            if (!date) return null;
+            const dateKey = date.toISOString().split('T')[0];
+            const dayTrades = accountTrades[dateKey] || [];
+            const pnl = dayTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+            return { pnl, count: dayTrades.length };
+        };
+
+        const getMonthStats = () => {
+            const year = currentMonth.getFullYear();
+            const month = currentMonth.getMonth();
+            let totalPnL = 0;
+            let totalTrades = 0;
+
+            Object.keys(accountTrades).forEach(dateKey => {
+                const tradeDate = new Date(dateKey);
+                if (tradeDate.getFullYear() === year && tradeDate.getMonth() === month) {
+                    accountTrades[dateKey].forEach(trade => {
+                        totalPnL += trade.pnl || 0;
+                        totalTrades++;
+                    });
+                }
+            });
+
+            return { totalPnL, totalTrades };
+        };
+
+        const days = getDaysInMonth(currentMonth);
+        const monthStats = getMonthStats();
+
+        return (
+            <div className="space-y-6">
+                <div className="glass-card p-6 sm:p-8">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                        <div>
+                            <h2 className="text-2xl sm:text-3xl font-bold mb-2">
+                                {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                            </h2>
+                            <div className="flex gap-4 text-sm">
+                                <span className={`font-bold ${monthStats.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {formatCurrency(monthStats.totalPnL)}
+                                </span>
+                                <span className="text-gray-400">{monthStats.totalTrades} trades</span>
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+                                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 font-semibold"
+                            >
+                                ← Prev
+                            </button>
+                            <button 
+                                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+                                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 font-semibold"
+                            >
+                                Next →
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-2 mb-2">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                            <div key={day} className="text-center font-bold text-gray-400 text-xs sm:text-sm py-2">
+                                {day}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-2">
+                        {days.map((day, index) => {
+                            const stats = getDayStats(day);
+                            const isToday = day && day.toDateString() === new Date().toDateString();
+                            
+                            return (
+                                <div 
+                                    key={index} 
+                                    className={`calendar-cell p-2 sm:p-3 ${
+                                        !day ? 'bg-transparent cursor-default' :
+                                        isToday ? 'bg-gradient-to-br from-indigo-500/30 to-purple-500/30 ring-2 ring-indigo-400' :
+                                        stats && stats.pnl > 0 ? 'bg-gradient-to-br from-green-500/20 to-emerald-500/20' :
+                                        stats && stats.pnl < 0 ? 'bg-gradient-to-br from-red-500/20 to-rose-500/20' :
+                                        'bg-white/5'
+                                    }`}
+                                >
+                                    {day && (
+                                        <>
+                                            <div className="text-xs sm:text-sm font-bold mb-1">
+                                                {day.getDate()}
+                                            </div>
+                                            {stats && stats.count > 0 && (
+                                                <>
+                                                    <div className={`text-xs font-bold ${stats.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                        ${Math.abs(stats.pnl).toFixed(0)}
+                                                    </div>
+                                                    <div className="text-xs text-gray-400">
+                                                        {stats.count}
+                                                    </div>
+                                                </>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // Trade Logger with Exit Time
+    const TradeLogger = ({ addTrade, addActiveTrade }) => {
+        const [tradeType, setTradeType] = useState('closed');
+        const [formData, setFormData] = useState({
+            instrument: '', direction: 'BUY', entryPrice: '', stopLoss: '', takeProfit: '',
+            initialRisk: '', pnl: '', outcome: 'WIN', strategy: '', session: '',
+            emotionalState: 'Calm', followedPlan: true, confidence: 3, notes: '', 
+            exitTime: '', plannedDuration: ''
+        });
+
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            const calculatedData = {
+                ...formData,
+                initialRisk: parseFloat(formData.initialRisk) || 0,
+                pnl: parseFloat(formData.pnl) || 0,
+                rMultiple: calculateRMultiple(parseFloat(formData.pnl), parseFloat(formData.initialRisk))
+            };
+
+            if (tradeType === 'active') {
+                addActiveTrade(calculatedData);
+            } else {
+                addTrade(calculatedData);
+            }
+
+            setFormData({
+                instrument: '', direction: 'BUY', entryPrice: '', stopLoss: '', takeProfit: '',
+                initialRisk: '', pnl: '', outcome: 'WIN', strategy: '', session: '',
+                emotionalState: 'Calm', followedPlan: true, confidence: 3, notes: '', 
+                exitTime: '', plannedDuration: ''
+            });
+        };
+
+        return (
+            <div className="glass-card p-6 sm:p-8">
+                <h2 className="text-2xl sm:text-3xl font-bold mb-6">Trade Logger</h2>
+
+                <div className="flex gap-3 mb-6">
+                    <button
+                        onClick={() => setTradeType('closed')}
+                        className={`flex-1 px-6 py-3 rounded-xl font-bold ${tradeType === 'closed' ? 'tab-active' : 'tab-inactive'}`}
+                    >
+                        Closed Trade
+                    </button>
+                    <button
+                        onClick={() => setTradeType('active')}
+                        className={`flex-1 px-6 py-3 rounded-xl font-bold ${tradeType === 'active' ? 'tab-active' : 'tab-inactive'}`}
+                    >
+                        Active Trade
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Instrument</label>
+                            <input
+                                type="text"
+                                value={formData.instrument}
+                                onChange={(e) => setFormData({ ...formData, instrument: e.target.value })}
+                                className="input-field"
+                                placeholder="EUR/USD, GOLD, etc."
+                                required
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Direction</label>
+                            <select
+                                value={formData.direction}
+                                onChange={(e) => setFormData({ ...formData, direction: e.target.value })}
+                                className="input-field"
+                            >
+                                <option value="BUY">BUY / LONG</option>
+                                <option value="SELL">SELL / SHORT</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Entry Price</label>
+                            <input
+                                type="number"
+                                step="0.00001"
+                                value={formData.entryPrice}
+                                onChange={(e) => setFormData({ ...formData, entryPrice: e.target.value })}
+                                className="input-field"
+                                required
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Initial Risk ($)</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={formData.initialRisk}
+                                onChange={(e) => setFormData({ ...formData, initialRisk: e.target.value })}
+                                className="input-field"
+                                placeholder="50.00"
+                            />
+                        </div>
+
+                        {tradeType === 'active' && (
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-300 mb-2">Exit Time ⏰</label>
+                                <input
+                                    type="datetime-local"
+                                    value={formData.exitTime}
+                                    onChange={(e) => setFormData({ ...formData, exitTime: e.target.value })}
+                                    className="input-field"
+                                />
+                            </div>
+                        )}
+
+                        {tradeType === 'closed' && (
+                            <>
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">P/L ($)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={formData.pnl}
+                                        onChange={(e) => setFormData({ ...formData, pnl: e.target.value })}
+                                        className="input-field"
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Outcome</label>
+                                    <select
+                                        value={formData.outcome}
+                                        onChange={(e) => setFormData({ ...formData, outcome: e.target.value })}
+                                        className="input-field"
+                                    >
+                                        <option value="WIN">✓ WIN</option>
+                                        <option value="LOSS">✗ LOSS</option>
+                                        <option value="BREAKEVEN">― BREAKEVEN</option>
+                                    </select>
+                                </div>
+                            </>
+                        )}
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Strategy</label>
+                            <input
+                                type="text"
+                                value={formData.strategy}
+                                onChange={(e) => setFormData({ ...formData, strategy: e.target.value })}
+                                className="input-field"
+                                placeholder="Breakout, Pullback, etc."
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Session</label>
+                            <select
+                                value={formData.session}
+                                onChange={(e) => setFormData({ ...formData, session: e.target.value })}
+                                className="input-field"
+                            >
+                                <option value="">Select Session</option>
+                                <option value="London">London</option>
+                                <option value="New York">New York</option>
+                                <option value="Asia">Asia</option>
+                                <option value="Overlap">Overlap</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Emotional State</label>
+                            <select
+                                value={formData.emotionalState}
+                                onChange={(e) => setFormData({ ...formData, emotionalState: e.target.value })}
+                                className="input-field"
+                            >
+                                <option value="Calm">😌 Calm</option>
+                                <option value="Confident">😎 Confident</option>
+                                <option value="FOMO">😰 FOMO</option>
+                                <option value="Revenge">😤 Revenge</option>
+                                <option value="Anxious">😟 Anxious</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Confidence (1-5)</label>
+                            <input
+                                type="range"
+                                min="1"
+                                max="5"
+                                value={formData.confidence}
+                                onChange={(e) => setFormData({ ...formData, confidence: parseInt(e.target.value) })}
+                                className="w-full"
+                            />
+                            <div className="text-center text-lg font-bold text-indigo-400">{formData.confidence}</div>
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Notes</label>
+                            <textarea
+                                value={formData.notes}
+                                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                                className="input-field"
+                                rows="3"
+                                placeholder="What happened? What did you learn?"
+                            />
+                        </div>
+                    </div>
+
+                    <button type="submit" className="w-full btn-primary py-4 text-lg">
+                        {tradeType === 'active' ? '🚀 Create Active Trade' : '📝 Log Trade'}
+                    </button>
+                </form>
+            </div>
+        );
+    };
+
+    // History Page with Follow Plan Tracking
+    const HistoryPage = ({ data, closeActiveTrade }) => {
+        const [view, setView] = useState('active');
+        const accountId = data.activeAccountId;
+        const activeTrades = data.activeTrades[accountId] || [];
+        const accountTrades = data.trades[accountId] || {};
+        const allClosedTrades = Object.values(accountTrades).flat().sort((a, b) => 
+            new Date(b.timestamp) - new Date(a.timestamp)
+        );
+
+        const [closingTrade, setClosingTrade] = useState(null);
+        const [outcomeForm, setOutcomeForm] = useState({ pnl: '', outcome: 'WIN', followedPlan: true, notes: '' });
+
+        const handleClose = () => {
+            closeActiveTrade(closingTrade.id, { 
+                ...outcomeForm, 
+                pnl: parseFloat(outcomeForm.pnl) || 0,
+                followedPlan: outcomeForm.followedPlan
+            });
+            setClosingTrade(null);
+            setOutcomeForm({ pnl: '', outcome: 'WIN', followedPlan: true, notes: '' });
+        };
+
+        const checkExitTime = (trade) => {
+            if (!trade.exitTime) return null;
+            const exitTime = new Date(trade.exitTime);
+            const now = new Date();
+            if (exitTime <= now) return 'overdue';
+            const diff = exitTime - now;
+            if (diff < 3600000) return 'soon'; // less than 1 hour
+            return 'ok';
+        };
+
+        return (
+            <div className="space-y-6">
+                <div className="glass-card p-6 sm:p-8">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                        <h2 className="text-2xl sm:text-3xl font-bold">Trade History</h2>
+                        <div className="flex gap-2 w-full sm:w-auto">
+                            <button
+                                onClick={() => setView('active')}
+                                className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-semibold ${view === 'active' ? 'tab-active' : 'tab-inactive'}`}
+                            >
+                                ⚡ Active ({activeTrades.length})
+                            </button>
+                            <button
+                                onClick={() => setView('closed')}
+                                className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-semibold ${view === 'closed' ? 'tab-active' : 'tab-inactive'}`}
+                            >
+                                📜 Closed ({allClosedTrades.length})
+                            </button>
+                        </div>
+                    </div>
+
+                    {view === 'active' ? (
+                        activeTrades.length === 0 ? (
+                            <div className="text-center py-12">
+                                <div className="text-6xl mb-4">⚡</div>
+                                <p className="text-xl text-gray-400">No active trades</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {activeTrades.map(trade => {
+                                    const exitStatus = checkExitTime(trade);
+                                    return (
+                                        <div key={trade.id} className="p-4 sm:p-6 rounded-xl bg-white/5 border border-white/10">
+                                            <div className="flex flex-col sm:flex-row justify-between gap-4">
+                                                <div className="flex-1">
+                                                    <h3 className="text-xl font-bold mb-2">{trade.instrument}</h3>
+                                                    <div className="flex flex-wrap gap-2 mb-2">
+                                                        <span className={`px-3 py-1 rounded-lg font-bold ${
+                                                            trade.direction === 'BUY' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                                                        }`}>
+                                                            {trade.direction}
+                                                        </span>
+                                                        {trade.strategy && <span className="px-3 py-1 rounded-lg bg-blue-500/20 text-blue-400">{trade.strategy}</span>}
+                                                        {exitStatus === 'overdue' && (
+                                                            <span className="px-3 py-1 rounded-lg bg-red-500/20 text-red-400 animate-pulse">
+                                                                ⏰ Exit Time Passed!
+                                                            </span>
+                                                        )}
+                                                        {exitStatus === 'soon' && (
+                                                            <span className="px-3 py-1 rounded-lg bg-yellow-500/20 text-yellow-400">
+                                                                ⏰ Exit Soon
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-gray-400">Entry: {trade.entryPrice}</p>
+                                                    {trade.exitTime && (
+                                                        <p className="text-sm text-gray-400">Exit Time: {formatDate(trade.exitTime)} {formatTime(trade.exitTime)}</p>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => setClosingTrade(trade)}
+                                                    className="btn-primary whitespace-nowrap"
+                                                >
+                                                    Close Trade
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )
+                    ) : (
+                        allClosedTrades.length === 0 ? (
+                            <div className="text-center py-12">
+                                <div className="text-6xl mb-4">📜</div>
+                                <p className="text-xl text-gray-400">No closed trades yet</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {allClosedTrades.slice(0, 20).map(trade => (
+                                    <div key={trade.id} className="p-4 rounded-xl bg-white/5 border border-white/10">
+                                        <div className="flex flex-col sm:flex-row justify-between gap-3">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <h4 className="font-bold text-lg">{trade.instrument}</h4>
+                                                    <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                                        trade.direction === 'BUY' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                                                    }`}>
+                                                        {trade.direction}
+                                                    </span>
+                                                    {trade.followedPlan ? (
+                                                        <span className="px-2 py-1 rounded text-xs font-bold bg-blue-500/20 text-blue-400">
+                                                            ✓ Plan
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2 py-1 rounded text-xs font-bold bg-red-500/20 text-red-400">
+                                                            ✗ Plan
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-wrap gap-2 text-xs text-gray-400">
+                                                    <span>{formatDate(trade.timestamp || trade.date)}</span>
+                                                    {trade.strategy && <span>• {trade.strategy}</span>}
+                                                    {trade.session && <span>• {trade.session}</span>}
+                                                    {trade.duration && <span>• {trade.duration}</span>}
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className={`text-2xl font-bold ${(trade.pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                    {formatCurrency(trade.pnl || 0)}
+                                                </p>
+                                                {trade.rMultiple && (
+                                                    <p className="text-sm text-gray-400">{trade.rMultiple.toFixed(2)}R</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )
+                    )}
+                </div>
+
+                {closingTrade && (
+                    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                        <div className="glass-card p-6 sm:p-8 max-w-md w-full">
+                            <h3 className="text-2xl font-bold mb-6">Close Trade: {closingTrade.instrument}</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">P/L ($)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={outcomeForm.pnl}
+                                        onChange={(e) => setOutcomeForm({ ...outcomeForm, pnl: e.target.value })}
+                                        className="input-field"
+                                        autoFocus
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Outcome</label>
+                                    <select
+                                        value={outcomeForm.outcome}
+                                        onChange={(e) => setOutcomeForm({ ...outcomeForm, outcome: e.target.value })}
+                                        className="input-field"
+                                    >
+                                        <option value="WIN">✓ WIN</option>
+                                        <option value="LOSS">✗ LOSS</option>
+                                        <option value="BREAKEVEN">― BREAKEVEN</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Followed Plan?</label>
+                                    <select
+                                        value={outcomeForm.followedPlan}
+                                        onChange={(e) => setOutcomeForm({ ...outcomeForm, followedPlan: e.target.value === 'true' })}
+                                        className="input-field"
+                                    >
+                                        <option value="true">✓ Yes</option>
+                                        <option value="false">✗ No</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Notes</label>
+                                    <textarea
+                                        value={outcomeForm.notes}
+                                        onChange={(e) => setOutcomeForm({ ...outcomeForm, notes: e.target.value })}
+                                        className="input-field"
+                                        rows="3"
+                                        placeholder="What happened? Did you follow your plan?"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex gap-3 mt-6">
+                                <button onClick={() => setClosingTrade(null)} className="flex-1 px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 font-semibold">
+                                    Cancel
+                                </button>
+                                <button onClick={handleClose} className="flex-1 btn-primary">
+                                    Close Trade
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // Enhanced Metrics Page
+    const MetricsPage = ({ data }) => {
+        const accountId = data.activeAccountId;
+        const accountTrades = data.trades[accountId] || {};
+        const allTrades = Object.values(accountTrades).flat();
+
+        if (allTrades.length === 0) {
+            return (
+                <div className="glass-card p-12 text-center">
+                    <div className="text-6xl mb-4">🔥</div>
+                    <h3 className="text-2xl font-bold mb-2">No Metrics Yet</h3>
+                    <p className="text-gray-400">Log trades to see advanced metrics!</p>
+                </div>
+            );
+        }
+
+        const tradesWithR = allTrades.filter(t => t.initialRisk && t.initialRisk !== 0);
+        const avgR = tradesWithR.length > 0 ? tradesWithR.reduce((sum, t) => sum + (t.rMultiple || 0), 0) / tradesWithR.length : 0;
+        const wins = allTrades.filter(t => (t.pnl || 0) > 0);
+        const winRate = (wins.length / allTrades.length) * 100;
+
+        // Strategy Stats
+        const strategyStats = {};
+        allTrades.forEach(trade => {
+            const strat = trade.strategy || 'No Strategy';
+            if (!strategyStats[strat]) strategyStats[strat] = { pnl: 0, count: 0, wins: 0 };
+            strategyStats[strat].pnl += trade.pnl || 0;
+            strategyStats[strat].count++;
+            if ((trade.pnl || 0) > 0) strategyStats[strat].wins++;
+        });
+
+        // Emotion Stats
+        const emotionStats = {};
+        allTrades.forEach(trade => {
+            const emotion = trade.emotionalState || 'Unknown';
+            if (!emotionStats[emotion]) emotionStats[emotion] = { pnl: 0, count: 0 };
+            emotionStats[emotion].pnl += trade.pnl || 0;
+            emotionStats[emotion].count++;
+        });
+
+        // Session Stats
+        const sessionStats = {};
+        allTrades.forEach(trade => {
+            const session = trade.session || 'Unknown';
+            if (!sessionStats[session]) sessionStats[session] = { pnl: 0, count: 0, wins: 0 };
+            sessionStats[session].pnl += trade.pnl || 0;
+            sessionStats[session].count++;
+            if ((trade.pnl || 0) > 0) sessionStats[session].wins++;
+        });
+
+        // Plan Following Analysis
+        const planFollowed = allTrades.filter(t => t.followedPlan === true);
+        const planNot = allTrades.filter(t => t.followedPlan === false);
+        const avgPnLPlanYes = planFollowed.length > 0 ? planFollowed.reduce((s, t) => s + (t.pnl || 0), 0) / planFollowed.length : 0;
+        const avgPnLPlanNo = planNot.length > 0 ? planNot.reduce((s, t) => s + (t.pnl || 0), 0) / planNot.length : 0;
+
+        // Duration Analysis
+        const tradesWithDuration = allTrades.filter(t => t.duration);
+        const avgDuration = tradesWithDuration.length > 0 ? 
+            tradesWithDuration.reduce((sum, t) => {
+                const match = t.duration.match(/(\d+)h/);
+                return sum + (match ? parseInt(match[1]) : 0);
+            }, 0) / tradesWithDuration.length : 0;
+
+        return (
+            <div className="space-y-6">
+                <div className="glass-card p-6 sm:p-8">
+                    <h2 className="text-2xl sm:text-3xl font-bold mb-6 bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent">
+                        🔥 Advanced Metrics
+                    </h2>
+
+                    {/* R-Multiple Analysis */}
+                    <div className="mb-8">
+                        <h3 className="text-xl font-bold mb-4 text-indigo-400">📊 R-Multiple Analysis</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+                            <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 border border-blue-500/30">
+                                <p className="text-xs text-blue-300 mb-1">Avg R</p>
+                                <p className="text-xl sm:text-2xl font-bold text-white">{avgR.toFixed(2)}R</p>
+                            </div>
+                            <div className="p-4 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30">
+                                <p className="text-xs text-green-300 mb-1">Expectancy</p>
+                                <p className="text-xl sm:text-2xl font-bold text-white">{formatCurrency(calculateExpectancy(allTrades))}</p>
+                            </div>
+                            <div className="p-4 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30">
+                                <p className="text-xs text-purple-300 mb-1">Profit Factor</p>
+                                <p className="text-xl sm:text-2xl font-bold text-white">{calculateProfitFactor(allTrades).toFixed(2)}</p>
+                            </div>
+                            <div className="p-4 rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30">
+                                <p className="text-xs text-yellow-300 mb-1">Win Rate</p>
+                                <p className="text-xl sm:text-2xl font-bold text-white">{winRate.toFixed(1)}%</p>
+                            </div>
+                            <div className="p-4 rounded-xl bg-gradient-to-br from-pink-500/20 to-rose-500/20 border border-pink-500/30">
+                                <p className="text-xs text-pink-300 mb-1">Avg Duration</p>
+                                <p className="text-xl sm:text-2xl font-bold text-white">{avgDuration.toFixed(1)}h</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Psychology & Discipline */}
+                    <div className="mb-8">
+                        <h3 className="text-xl font-bold mb-4 text-pink-400">🧠 Psychology & Discipline</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/30">
+                                <p className="text-sm text-gray-400 mb-2">Plan Followed</p>
+                                <p className="text-3xl font-bold text-green-400">{formatCurrency(avgPnLPlanYes)}</p>
+                                <p className="text-xs text-gray-500 mt-1">{planFollowed.length} trades</p>
+                            </div>
+                            <div className="p-4 rounded-xl bg-gradient-to-br from-red-500/10 to-orange-500/10 border border-red-500/30">
+                                <p className="text-sm text-gray-400 mb-2">Plan NOT Followed</p>
+                                <p className="text-3xl font-bold text-red-400">{formatCurrency(avgPnLPlanNo)}</p>
+                                <p className="text-xs text-gray-500 mt-1">{planNot.length} trades</p>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {Object.entries(emotionStats).map(([emotion, stats]) => (
+                                <div key={emotion} className="p-4 rounded-xl bg-white/5">
+                                    <p className="text-sm text-gray-400 mb-1">{emotion}</p>
+                                    <p className={`text-lg sm:text-xl font-bold ${stats.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {formatCurrency(stats.pnl)}
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-1">{stats.count} trades</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Time-Based Performance */}
+                    <div className="mb-8">
+                        <h3 className="text-xl font-bold mb-4 text-cyan-400">⏰ Session Performance</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {Object.entries(sessionStats).map(([session, stats]) => (
+                                <div key={session} className="p-4 rounded-xl bg-white/5">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="font-bold text-lg mb-1">{session}</p>
+                                            <p className="text-xs text-gray-400">{stats.count} trades • {((stats.wins/stats.count)*100).toFixed(1)}% WR</p>
+                                        </div>
+                                        <p className={`text-xl font-bold ${stats.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            {formatCurrency(stats.pnl)}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Strategy Performance */}
+                    <div>
+                        <h3 className="text-xl font-bold mb-4 text-purple-400">🎯 Strategy Performance</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {Object.entries(strategyStats).sort((a, b) => b[1].pnl - a[1].pnl).map(([strategy, stats]) => (
+                                <div key={strategy} className="p-4 rounded-xl bg-white/5">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="font-bold text-lg mb-1">{strategy}</p>
+                                            <p className="text-xs text-gray-400">{stats.count} trades • {((stats.wins/stats.count)*100).toFixed(1)}% WR</p>
+                                        </div>
+                                        <p className={`text-xl font-bold ${stats.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            {formatCurrency(stats.pnl)}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // Multiple Charts Page
+    const ChartsPage = ({ data }) => {
+        const [chartType, setChartType] = useState('equity');
+        const accountId = data.activeAccountId;
+        const accountTrades = data.trades[accountId] || {};
+        const allTrades = Object.values(accountTrades).flat().sort((a, b) => 
+            new Date(a.timestamp) - new Date(b.timestamp)
+        );
+
+        const chartRef = useRef(null);
+
+        useEffect(() => {
+            if (!chartRef.current || allTrades.length === 0) return;
+            
+            const ctx = chartRef.current.getContext('2d');
+            const existingChart = Chart.getChart(ctx);
+            if (existingChart) existingChart.destroy();
+
+            let chartConfig = {};
+
+            if (chartType === 'equity') {
+                let cumulative = 0;
+                const equityData = allTrades.map((trade, index) => {
+                    cumulative += trade.pnl || 0;
+                    return { x: index + 1, y: cumulative };
+                });
+
+                chartConfig = {
+                    type: 'line',
+                    data: {
+                        datasets: [{
+                            label: 'Equity Curve',
+                            data: equityData,
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            borderWidth: 3
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { labels: { color: '#f1f5f9' } } },
+                        scales: {
+                            x: { 
+                                title: { display: true, text: 'Trade Number', color: '#94a3b8' },
+                                ticks: { color: '#94a3b8' },
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                            },
+                            y: { 
+                                title: { display: true, text: 'Cumulative P/L ($)', color: '#94a3b8' },
+                                ticks: { color: '#94a3b8' },
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                            }
+                        }
+                    }
+                };
+            } else if (chartType === 'pnl') {
+                const pnlData = allTrades.map((trade, index) => ({
+                    x: index + 1,
+                    y: trade.pnl || 0
+                }));
+
+                chartConfig = {
+                    type: 'bar',
+                    data: {
+                        datasets: [{
+                            label: 'P/L per Trade',
+                            data: pnlData,
+                            backgroundColor: allTrades.map(t => (t.pnl || 0) >= 0 ? 'rgba(16, 185, 129, 0.6)' : 'rgba(239, 68, 68, 0.6)'),
+                            borderColor: allTrades.map(t => (t.pnl || 0) >= 0 ? '#10b981' : '#ef4444'),
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { labels: { color: '#f1f5f9' } } },
+                        scales: {
+                            x: { 
+                                title: { display: true, text: 'Trade Number', color: '#94a3b8' },
+                                ticks: { color: '#94a3b8' },
+                                grid: { display: false }
+                            },
+                            y: { 
+                                title: { display: true, text: 'P/L ($)', color: '#94a3b8' },
+                                ticks: { color: '#94a3b8' },
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                            }
+                        }
+                    }
+                };
+            } else if (chartType === 'duration') {
+                const durationData = allTrades.filter(t => t.duration && t.pnl).map(trade => ({
+                    x: parseFloat(trade.duration.match(/(\d+\.?\d*)h/)?.[1] || 0),
+                    y: trade.pnl
+                }));
+
+                chartConfig = {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'Duration vs P/L',
+                            data: durationData,
+                            backgroundColor: 'rgba(99, 102, 241, 0.6)',
+                            borderColor: '#6366f1',
+                            pointRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { labels: { color: '#f1f5f9' } } },
+                        scales: {
+                            x: { 
+                                title: { display: true, text: 'Duration (hours)', color: '#94a3b8' },
+                                ticks: { color: '#94a3b8' },
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                            },
+                            y: { 
+                                title: { display: true, text: 'P/L ($)', color: '#94a3b8' },
+                                ticks: { color: '#94a3b8' },
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                            }
+                        }
+                    }
+                };
+            }
+
+            new Chart(ctx, chartConfig);
+        }, [allTrades, chartType]);
+
+        return (
+            <div className="space-y-6">
+                <div className="glass-card p-6 sm:p-8">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                        <h2 className="text-2xl sm:text-3xl font-bold">Performance Charts</h2>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setChartType('equity')}
+                                className={`px-4 py-2 rounded-xl font-semibold ${chartType === 'equity' ? 'tab-active' : 'tab-inactive'}`}
+                            >
+                                Equity
+                            </button>
+                            <button
+                                onClick={() => setChartType('pnl')}
+                                className={`px-4 py-2 rounded-xl font-semibold ${chartType === 'pnl' ? 'tab-active' : 'tab-inactive'}`}
+                            >
+                                P/L
+                            </button>
+                            <button
+                                onClick={() => setChartType('duration')}
+                                className={`px-4 py-2 rounded-xl font-semibold ${chartType === 'duration' ? 'tab-active' : 'tab-inactive'}`}
+                            >
+                                Duration
+                            </button>
+                        </div>
+                    </div>
+                    <div style={{ height: '300px', position: 'relative' }} className="sm:h-96">
+                        <canvas ref={chartRef}></canvas>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const RulesPage = ({ rules, updateData }) => {
+        const [formRules, setFormRules] = useState(rules);
+
+        const handleSave = () => {
+            updateData({ rules: formRules });
+            alert('Rules updated successfully! 🎉');
+        };
+
+        return (
+            <div className="glass-card p-6 sm:p-8">
+                <h2 className="text-2xl sm:text-3xl font-bold mb-6">Risk Management Rules</h2>
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Daily Max Loss (%)</label>
+                            <input
+                                type="number"
+                                step="0.1"
+                                value={formRules.dailyMaxLoss}
+                                onChange={(e) => setFormRules({ ...formRules, dailyMaxLoss: parseFloat(e.target.value) })}
+                                className="input-field"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Daily Profit Cap (%)</label>
+                            <input
+                                type="number"
+                                step="0.1"
+                                value={formRules.dailyProfitCap}
+                                onChange={(e) => setFormRules({ ...formRules, dailyProfitCap: parseFloat(e.target.value) })}
+                                className="input-field"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Max Trades Per Day</label>
+                            <input
+                                type="number"
+                                value={formRules.maxTradesPerDay}
+                                onChange={(e) => setFormRules({ ...formRules, maxTradesPerDay: parseInt(e.target.value) })}
+                                className="input-field"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-300 mb-2">Max Risk Per Trade (%)</label>
+                            <input
+                                type="number"
+                                step="0.1"
+                                value={formRules.maxRiskPerTrade}
+                                onChange={(e) => setFormRules({ ...formRules, maxRiskPerTrade: parseFloat(e.target.value) })}
+                                className="input-field"
+                            />
+                        </div>
+                    </div>
+                    <button onClick={handleSave} className="w-full btn-primary py-4 text-lg">
+                        💾 Save Rules
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+    const ProfilePage = ({ data, updateData, addNotification }) => {
+        const [isEditing, setIsEditing] = useState(null);
+        const [editForm, setEditForm] = useState({ name: '', size: '' });
+        const [isAdding, setIsAdding] = useState(false);
+        const [newAccount, setNewAccount] = useState({ name: '', size: '' });
+
+        const handleEdit = (account) => {
+            setIsEditing(account.id);
+            setEditForm({ name: account.name, size: account.size });
+        };
+
+        const handleSaveEdit = () => {
+            const accounts = data.accounts.map(acc => 
+                acc.id === isEditing ? { ...acc, name: editForm.name, size: parseFloat(editForm.size) } : acc
+            );
+            updateData({ accounts });
+            setIsEditing(null);
+            addNotification('Account updated! ✓', 'success');
+        };
+
+        const handleAdd = () => {
+            if (!newAccount.name || !newAccount.size) {
+                addNotification('Please fill all fields', 'error');
+                return;
+            }
+            const newAcc = {
+                id: Date.now().toString(),
+                name: newAccount.name,
+                size: parseFloat(newAccount.size),
+                initialBalance: parseFloat(newAccount.size),
+                color: '#6366f1'
+            };
+            updateData({ accounts: [...data.accounts, newAcc] });
+            setNewAccount({ name: '', size: '' });
+            setIsAdding(false);
+            addNotification('Account created! 🎉', 'success');
+        };
+
+        return (
+            <div className="glass-card p-6 sm:p-8">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <h2 className="text-2xl sm:text-3xl font-bold">Trading Accounts</h2>
+                    <button onClick={() => setIsAdding(true)} className="btn-primary w-full sm:w-auto">
+                        + Add Account
+                    </button>
+                </div>
+
+                {isAdding && (
+                    <div className="mb-6 p-6 rounded-xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/30">
+                        <h3 className="font-bold text-xl mb-4">New Account</h3>
+                        <div className="space-y-4">
+                            <input
+                                type="text"
+                                placeholder="Account Name"
+                                value={newAccount.name}
+                                onChange={(e) => setNewAccount({ ...newAccount, name: e.target.value })}
+                                className="input-field"
+                            />
+                            <input
+                                type="number"
+                                placeholder="Account Size ($)"
+                                value={newAccount.size}
+                                onChange={(e) => setNewAccount({ ...newAccount, size: e.target.value })}
+                                className="input-field"
+                            />
+                            <div className="flex gap-3">
+                                <button onClick={handleAdd} className="flex-1 btn-primary">Add</button>
+                                <button onClick={() => setIsAdding(false)} className="flex-1 px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 font-semibold">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="space-y-4">
+                    {data.accounts.map(account => (
+                        <div key={account.id} className={`p-6 rounded-xl ${
+                            account.id === data.activeAccountId 
+                                ? 'bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border-2 border-indigo-500/50' 
+                                : 'bg-white/5 border border-white/10'
+                        }`}>
+                            {isEditing === account.id ? (
+                                <div className="space-y-4">
+                                    <input
+                                        type="text"
+                                        value={editForm.name}
+                                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                        className="input-field"
+                                    />
+                                    <input
+                                        type="number"
+                                        value={editForm.size}
+                                        onChange={(e) => setEditForm({ ...editForm, size: e.target.value })}
+                                        className="input-field"
+                                    />
+                                    <div className="flex gap-3">
+                                        <button onClick={handleSaveEdit} className="flex-1 btn-primary">Save</button>
+                                        <button onClick={() => setIsEditing(null)} className="flex-1 px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 font-semibold">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col sm:flex-row justify-between gap-4">
+                                    <div>
+                                        <h3 className="text-xl font-bold">{account.name}</h3>
+                                        <p className="text-2xl font-bold text-indigo-400 mt-1">{formatCurrency(account.size)}</p>
+                                        {account.id === data.activeAccountId && (
+                                            <span className="inline-block mt-2 px-3 py-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-xs rounded-full font-bold">
+                                                ✓ Active
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {account.id !== data.activeAccountId && (
+                                            <button
+                                                onClick={() => updateData({ activeAccountId: account.id })}
+                                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:shadow-lg"
+                                            >
+                                                Set Active
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => handleEdit(account)}
+                                            className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 font-semibold"
+                                        >
+                                            Edit
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    ReactDOM.render(<TradingJournalApp />, document.getElementById('root'));
+</script>
+```
+
+</body>
+</html>
